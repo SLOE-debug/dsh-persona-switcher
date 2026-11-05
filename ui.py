@@ -9,12 +9,18 @@ from tkinter.scrolledtext import ScrolledText
 from typing import Any, Protocol
 
 from persona_store import Persona, PersonaStore, PersonaStoreError
+from status_text import render_status
+
+
+STATUS_REFRESH_MS = 6000
 
 
 class Controller(Protocol):
     store: PersonaStore
 
     def status(self) -> dict[str, Any]: ...
+
+    def discover(self) -> dict[str, Any]: ...
 
     def apply(self, name: str, text: str) -> dict[str, Any]: ...
 
@@ -31,7 +37,12 @@ class PersonaWindow:
         self.results: Queue[tuple[str, dict[str, Any] | None, str | None]] = Queue()
         self.busy = False
         self.closed = False
+        self.poll_enabled = False
+        self.refresh_timer: str | None = None
         self.connection = tk.StringVar(value="尚未检查连接")
+        self.discovery = tk.StringVar(value="识别入口：尚无结果")
+        self.request_counts = tk.StringVar(value="实际请求命中：尚无统计    跳过请求：尚无统计")
+        self.skip_reason = tk.StringVar(value="最近跳过原因：暂无")
         self.feedback = tk.StringVar(value="请选择人格；启动时不会自动应用。")
         self.selection = tk.StringVar()
         self._build()
@@ -42,8 +53,8 @@ class PersonaWindow:
 
     def _build(self) -> None:
         self.root.title("DSH 人格切换器")
-        self.root.geometry("820x650")
-        self.root.minsize(640, 500)
+        self.root.geometry("920x800")
+        self.root.minsize(780, 680)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         style = ttk.Style(self.root)
@@ -62,13 +73,33 @@ class PersonaWindow:
         status_row = ttk.Frame(outer)
         status_row.grid(row=1, column=0, sticky="ew", pady=(0, 15))
         status_row.columnconfigure(0, weight=1)
-        ttk.Label(status_row, textvariable=self.connection, wraplength=590).grid(
+        self.summary_label = ttk.Label(
+            status_row, textvariable=self.connection, wraplength=510
+        )
+        self.summary_label.grid(
             row=0, column=0, sticky="w", padx=(0, 10)
         )
         self.status_button = ttk.Button(
-            status_row, text="刷新连接", command=self._refresh_connection
+            status_row, text="刷新状态", command=self._refresh_connection
         )
         self.status_button.grid(row=0, column=1)
+        self.discover_button = ttk.Button(
+            status_row, text="重新识别入口", command=self._discover_entry
+        )
+        self.discover_button.grid(row=0, column=2, padx=(8, 0))
+        self.detail_labels = []
+        for row, variable in enumerate(
+            (self.discovery, self.request_counts, self.skip_reason), start=1
+        ):
+            label = ttk.Label(
+                status_row,
+                textvariable=variable,
+                wraplength=820,
+                justify="left",
+                foreground="#555555",
+            )
+            label.grid(row=row, column=0, columnspan=3, sticky="w", pady=(6, 0))
+            self.detail_labels.append(label)
 
         selector_row = ttk.Frame(outer)
         selector_row.grid(row=2, column=0, sticky="ew")
@@ -119,12 +150,20 @@ class PersonaWindow:
             outer, textvariable=self.feedback, wraplength=750, justify="left"
         )
         self.feedback_label.grid(row=6, column=0, sticky="ew", pady=(14, 4))
-        ttk.Label(
+        self.footer_label = ttk.Label(
             outer,
-            text="人格只调整表达方式。选择或预览文件不会应用设置。",
+            text="启动和预览不会注入人格。切换后等待下一次请求，实际命中数增加才表示请求已使用人格。",
             foreground="#555555",
             wraplength=750,
-        ).grid(row=7, column=0, sticky="w")
+        )
+        self.footer_label.grid(row=7, column=0, sticky="w")
+        outer.bind("<Configure>", self._resize_text)
+
+    def _resize_text(self, event: Any) -> None:
+        width = max(280, event.width - 8)
+        self.summary_label.configure(wraplength=max(260, width - 275))
+        for label in (*self.detail_labels, self.feedback_label, self.footer_label):
+            label.configure(wraplength=width)
 
     def _set_feedback(self, message: str, *, error: bool = False) -> None:
         self.feedback.set(message)
@@ -171,6 +210,7 @@ class PersonaWindow:
         state = "disabled" if self.busy else "normal"
         for button in (
             self.status_button,
+            self.discover_button,
             self.reset_button,
             self.reload_button,
             self.folder_button,
@@ -182,35 +222,50 @@ class PersonaWindow:
         self.selector.configure(state="disabled" if self.busy else "readonly")
 
     def _start_operation(
-        self, operation: str, action: Callable[[], dict[str, Any]], pending: str
+        self,
+        operation: str,
+        action: Callable[[], dict[str, Any]],
+        pending: str | None,
     ) -> None:
         if self.busy or self.closed:
             return
         self.busy = True
         self._update_controls()
-        self._set_feedback(pending)
+        if pending is not None:
+            self._set_feedback(pending)
 
         def worker() -> None:
             try:
                 result = action()
-                if not isinstance(result, dict) or not isinstance(result.get("message"), str):
-                    raise RuntimeError("服务返回了无法识别的结果。请刷新连接后重试。")
+                if (
+                    not isinstance(result, dict)
+                    or not isinstance(result.get("message"), str)
+                    or not isinstance(result.get("connected"), bool)
+                ):
+                    raise RuntimeError("服务返回了无法识别的结果。请刷新状态后重试。")
                 self.results.put((operation, result, None))
             except Exception as exc:
                 self.results.put(
-                    (operation, None, str(exc) or "请求未完成。请刷新连接后重试。")
+                    (operation, None, str(exc) or "请求未完成。请刷新状态后重试。")
                 )
 
         Thread(target=worker, name=f"persona-{operation}", daemon=True).start()
 
     def _refresh_connection(self) -> None:
-        self._start_operation("status", self.controller.status, "正在检查 DSH 连接…")
+        self._start_operation("status", self.controller.status, "正在检查 DSH 状态…")
+
+    def _discover_entry(self) -> None:
+        self._enable_polling()
+        self._start_operation(
+            "discover", self.controller.discover, "正在扫描并核验 DSH 请求入口…"
+        )
 
     def _apply_selected(self) -> None:
         persona = self.personas.get(self.selection.get())
         if persona is None:
             self._set_feedback("请先选择一个人格。", error=True)
             return
+        self._enable_polling()
         self._start_operation(
             "apply",
             lambda: self.controller.apply(persona.name, persona.text),
@@ -219,6 +274,25 @@ class PersonaWindow:
 
     def _reset_persona(self) -> None:
         self._start_operation("reset", self.controller.reset, "正在恢复标准人格…")
+
+    def _enable_polling(self) -> None:
+        self.poll_enabled = True
+        if self.refresh_timer is None:
+            self.refresh_timer = self.root.after(STATUS_REFRESH_MS, self._auto_refresh)
+
+    def _stop_polling(self) -> None:
+        self.poll_enabled = False
+        if self.refresh_timer is not None:
+            self.root.after_cancel(self.refresh_timer)
+            self.refresh_timer = None
+
+    def _auto_refresh(self) -> None:
+        self.refresh_timer = None
+        if self.closed or not self.poll_enabled:
+            return
+        if not self.busy:
+            self._start_operation("poll", self.controller.status, None)
+        self.refresh_timer = self.root.after(STATUS_REFRESH_MS, self._auto_refresh)
 
     def _open_folder(self) -> None:
         try:
@@ -236,20 +310,27 @@ class PersonaWindow:
                 self._update_controls()
                 if error is not None:
                     self._set_feedback(error, error=True)
-                    if operation == "status":
+                    if operation in ("status", "poll"):
                         self.connection.set("无法连接 DSH，请查看下方说明。")
                     continue
                 if result is not None:
-                    self._set_feedback(result["message"])
-                    if "connected" in result:
-                        self.connection.set("DSH 已连接" if result["connected"] else "DSH 未连接")
-                    if operation == "status":
-                        self.connection.set(result["message"])
+                    display = render_status(result)
+                    self.connection.set(display.summary)
+                    self.discovery.set(display.discovery)
+                    self.request_counts.set(display.requests)
+                    self.skip_reason.set(display.skipped)
+                    self._set_feedback(
+                        result["message"],
+                        error=not result["connected"] or result.get("phase") == "unsupported",
+                    )
+                    if operation == "reset":
+                        self._stop_polling()
         except Empty:
             pass
         self.root.after(100, self._poll_results)
 
     def _close(self) -> None:
+        self._stop_polling()
         self.closed = True
         self.root.destroy()
 

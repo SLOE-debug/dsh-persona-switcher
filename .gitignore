@@ -1,5 +1,7 @@
 # Python caches and local environments
 __pycache__/
+node_modules/
+.discovery-cache/
 *.py[cod]
 .venv/
 venv/
@@ -17,6 +19,18 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# Native binaries and intermediate files
+*.exe
+*.dll
+*.obj
+*.pdb
+*.ilk
+*.res
+*.lib
+*.exp
+*.pch
+*.idb
 
 # Editor and operating-system files
 .idea/

@@ -16,10 +16,29 @@ CREATE_NO_WINDOW = 0x08000000
 class HarnessProcess:
     pid: int
     created: str
+    executable: str
+    entries: tuple[str, ...]
+    roots: tuple[str, ...]
 
 
 def default_install_dir() -> Path:
     return Path(os.environ["LOCALAPPDATA"]) / "Programs" / "DSH Desktop"
+
+
+def split_command(command: str) -> list[str]:
+    parser = ctypes.WinDLL("shell32", use_last_error=True).CommandLineToArgvW
+    parser.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    parser.restype = ctypes.POINTER(wintypes.LPWSTR)
+    count = ctypes.c_int()
+    args = parser(command, ctypes.byref(count))
+    if not args:
+        return []
+    try:
+        return [args[i] for i in range(count.value)]
+    finally:
+        free = ctypes.WinDLL("kernel32").LocalFree
+        free.argtypes = [ctypes.c_void_p]
+        free(ctypes.cast(args, ctypes.c_void_p))
 
 
 def discover_harness(install_dir: Path) -> list[HarnessProcess]:
@@ -28,16 +47,19 @@ def discover_harness(install_dir: Path) -> list[HarnessProcess]:
     script = r"""
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-$target = $env:DSH_PERSONA_EXPECTED_EXE
-$rows = @(Get-CimInstance Win32_Process | Where-Object {
-    $_.ExecutablePath -ieq $target -and
-    $_.CommandLine -match '(?i)[\\/]harness-node-entry\.mjs(?:"|\s|$)'
-} | ForEach-Object {
-    @{pid = $_.ProcessId; created = $_.CreationDate.ToUniversalTime().ToString('o')}
+$root = $env:DSH_PERSONA_INSTALL_ROOT.TrimEnd('\') + '\'
+$all = @(Get-CimInstance Win32_Process)
+$owned = @{}
+foreach ($item in $all) { if ($item.ExecutablePath -and $item.ExecutablePath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $owned[[int]$item.ProcessId] = $true } }
+for ($round=0; $round -lt 4; $round++) {
+    foreach ($item in $all) { if ($owned.ContainsKey([int]$item.ParentProcessId)) { $owned[[int]$item.ProcessId] = $true } }
+}
+$rows = @($all | Where-Object { $owned.ContainsKey([int]$_.ProcessId) -and $_.ExecutablePath } | ForEach-Object {
+    @{pid=$_.ProcessId; parent=$_.ParentProcessId; created=$_.CreationDate.ToUniversalTime().ToString('o'); executable=$_.ExecutablePath; command=$_.CommandLine}
 })
 ConvertTo-Json -InputObject $rows -Compress
 """
-    env = {**os.environ, "DSH_PERSONA_EXPECTED_EXE": str(install_dir / "DSH Desktop.exe")}
+    env = {**os.environ, "DSH_PERSONA_INSTALL_ROOT": str(install_dir)}
     system_root = Path(os.environ["SystemRoot"])
     powershell = system_root / "System32/WindowsPowerShell/v1.0/powershell.exe"
     result = subprocess.run(
@@ -47,7 +69,30 @@ ConvertTo-Json -InputObject $rows -Compress
     )
     if result.returncode:
         raise RuntimeError("无法读取 DSH 进程，请以与 DSH 相同的用户权限运行。")
-    return [HarnessProcess(int(row["pid"]), row["created"]) for row in json.loads(result.stdout)]
+    roots = (install_dir.resolve(), (Path(os.environ["APPDATA"]) / "dsh-desktop" / "harness").resolve())
+    found = []
+    rows = json.loads(result.stdout)
+    parents = {int(row['pid']): int(row['parent']) for row in rows}
+    for row in rows:
+        args = split_command(row["command"] or "")
+        entries = []
+        for arg in args[1:]:
+            path = Path(arg)
+            if path.is_absolute() and path.suffix.lower() in (".js", ".mjs", ".cjs") and any(path.is_relative_to(root) for root in roots):
+                entries.append(str(path))
+        if entries:
+            found.append(HarnessProcess(int(row["pid"]), row["created"], row["executable"], tuple(entries), tuple(map(str, roots))))
+    candidates = {process.pid for process in found}
+    def has_runtime_ancestor(process):
+        parent = parents.get(process.pid)
+        for _ in range(8):
+            if parent in candidates:
+                return True
+            parent = parents.get(parent)
+            if parent is None:
+                break
+        return False
+    return [process for process in found if not has_runtime_ancestor(process)]
 
 
 class _TcpRow(ctypes.Structure):

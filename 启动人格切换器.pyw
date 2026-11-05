@@ -1,10 +1,9 @@
-from pathlib import Path
 import traceback
 
 if __name__ == "__main__":
     try:
-        from main import PersonaController, run_app
-        run_app(PersonaController(Path(__file__).resolve().parent))
+        from main import main
+        main()
     except Exception:
         import tkinter as tk
         from tkinter import messagebox
