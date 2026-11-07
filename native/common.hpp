@@ -17,6 +17,7 @@ bool within(const fs::path& root, const fs::path& file);
 fs::path executablePath();
 fs::path localData();
 fs::path roamingData();
+fs::path userProfile();
 std::string readFile(const fs::path& path, size_t limit = 64 * 1024 * 1024);
 void writeFile(const fs::path& path, const std::string& bytes);
 std::string fingerprint(std::string bytes);

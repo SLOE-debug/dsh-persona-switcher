@@ -47,6 +47,7 @@ static fs::path knownFolder(REFKNOWNFOLDERID id) {
 }
 fs::path localData() { return knownFolder(FOLDERID_LocalAppData); }
 fs::path roamingData() { return knownFolder(FOLDERID_RoamingAppData); }
+fs::path userProfile() { return knownFolder(FOLDERID_Profile); }
 std::string readFile(const fs::path& path, size_t limit) {
     auto size = fs::file_size(path);
     if (size > limit) throw std::runtime_error("文件超过读取上限：" + utf8(path.filename().wstring()));

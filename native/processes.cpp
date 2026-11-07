@@ -54,14 +54,61 @@ static std::vector<Process> processTable() {
     }
     return result;
 }
+static std::vector<fs::path> installRoots(const std::vector<Process>& table) {
+    std::vector<fs::path> roots;
+    wchar_t configured[32768]{};
+    DWORD length = GetEnvironmentVariableW(L"DSH_PERSONA_INSTALL_ROOT", configured, 32768);
+    if (length > 0 && length < 32768) roots.push_back(fs::path(configured));
+    std::error_code ignored;
+    if (roots.empty()) {
+        auto standard = localData() / L"Programs" / L"DSH Desktop";
+        if (fs::exists(standard, ignored)) roots.push_back(standard);
+    }
+    if (roots.empty()) {
+        // Fall back to the executable directory of a running Electron host, preferring DSH layouts.
+        std::set<std::wstring> strict, loose;
+        for (const auto& row : table) {
+            if (row.exe.empty()) continue;
+            auto directory = row.exe.parent_path();
+            if (!fs::exists(directory / L"resources" / L"app.asar", ignored)) continue;
+            auto key = normalizedPath(directory);
+            loose.insert(key);
+            std::wstring command = row.command;
+            std::transform(command.begin(), command.end(), command.begin(), towlower);
+            auto name = fs::path(key).filename().wstring();
+            if (name == L"dsh desktop.exe" || name == L"deepseek harness.exe" ||
+                command.find(L"app.asar\\dsh\\") != std::wstring::npos ||
+                command.find(L"app.asar/dsh/") != std::wstring::npos)
+                strict.insert(key);
+        }
+        if (!strict.empty()) for (const auto& item : strict) roots.push_back(item);
+        else if (loose.size() == 1) roots.push_back(*loose.begin());
+    }
+    return roots;
+}
+static std::vector<fs::path> profileRoots() {
+    std::vector<fs::path> roots; std::error_code ignored;
+    auto harness = roamingData() / L"dsh-desktop" / L"harness";
+    if (fs::exists(harness, ignored)) roots.push_back(harness);
+    auto home = userProfile() / L".dsh";
+    if (fs::exists(home, ignored)) roots.push_back(home);
+    return roots;
+}
 std::vector<Host> discoverHosts() {
-    auto install = localData() / L"Programs" / L"DSH Desktop";
-    auto profile = roamingData() / L"dsh-desktop" / L"harness";
-    auto table = processTable(); std::set<DWORD> owned;
+    auto table = processTable();
+    auto roots = installRoots(table);
+    if (roots.empty()) return {};
+    auto profiles = profileRoots();
+    roots.insert(roots.end(), profiles.begin(), profiles.end());
+    auto rooted = [&](const fs::path& path) {
+        for (const auto& root : roots) if (within(root, path)) return true;
+        return false;
+    };
+    std::set<DWORD> owned;
     std::map<DWORD, DWORD> parents;
     for (const auto& row : table) {
         parents[row.pid] = row.parent;
-        if (within(install, row.exe)) owned.insert(row.pid);
+        if (rooted(row.exe)) owned.insert(row.pid);
     }
     for (int i = 0; i < 4; ++i) for (const auto& row : table) if (owned.contains(row.parent)) owned.insert(row.pid);
     std::vector<Host> candidates, result;
@@ -69,12 +116,12 @@ std::vector<Host> discoverHosts() {
         if (!owned.contains(row.pid) || row.command.empty()) continue;
         int argc = 0; auto argv = CommandLineToArgvW(row.command.c_str(), &argc);
         if (!argv) continue;
-        Host host{row.pid, row.created, row.exe, {}, {install, profile}};
+        Host host{row.pid, row.created, row.exe, {}, roots};
         for (int i = 1; i < argc; ++i) {
             fs::path entry(argv[i]); auto ext = entry.extension().wstring();
             std::transform(ext.begin(), ext.end(), ext.begin(), towlower);
-            if (entry.is_absolute() && (ext == L".js" || ext == L".mjs" || ext == L".cjs") &&
-                (within(install, entry) || within(profile, entry))) host.entries.push_back(entry);
+            if (entry.is_absolute() && (ext == L".js" || ext == L".mjs" || ext == L".cjs") && rooted(entry))
+                host.entries.push_back(entry);
         }
         LocalFree(argv);
         if (!host.entries.empty()) candidates.push_back(std::move(host));
