@@ -13,18 +13,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     std::vector<std::wstring> args;
     if (arguments) { for (int i = 0; i < count; ++i) args.emplace_back(arguments[i]); LocalFree(arguments); }
     fs::path report;
-    bool test = args.size() > 1 && (args[1] == L"--self-test" || args[1] == L"--fixture-test");
+    bool test = args.size() > 1 && (args[1] == L"--self-test" || args[1] == L"--fixture-test" || args[1] == L"--list-hosts");
     try {
         if (test) {
-            if (args[1] == L"--self-test" && args.size() == 3) report = args[2];
+            if ((args[1] == L"--self-test" || args[1] == L"--list-hosts") && args.size() == 3) report = args[2];
             else if (args[1] == L"--fixture-test" && args.size() == 7) report = args[6];
             else throw std::runtime_error("测试参数无效。");
-            Controller controller;
             Json result;
-            if (args[1] == L"--self-test") result = controller.selfTest();
-            else {
-                Host host; host.pid = std::stoul(args[2]); host.executable = args[3];
-                host.entries = {args[4]}; host.roots = {args[5]}; result = controller.fixtureTest(host);
+            if (args[1] == L"--list-hosts") {
+                auto hosts = Json::array();
+                for (const auto& host : discoverHosts()) {
+                    auto entries = Json::array(), roots = Json::array();
+                    for (const auto& entry : host.entries) entries.push_back(utf8(entry.wstring()));
+                    for (const auto& root : host.roots) roots.push_back(utf8(root.wstring()));
+                    hosts.push_back({{"pid", host.pid}, {"executable", utf8(host.executable.wstring())},
+                        {"entries", entries}, {"roots", roots}});
+                }
+                result = {{"ok", true}, {"hosts", hosts}};
+            } else {
+                Controller controller;
+                if (args[1] == L"--self-test") result = controller.selfTest();
+                else {
+                    Host host; host.pid = std::stoul(args[2]); host.executable = args[3];
+                    host.entries = {args[4]}; host.roots = {args[5]}; result = controller.fixtureTest(host);
+                }
             }
             writeFile(report, result.dump(2)); return result.value("ok", false) ? 0 : 1;
         }

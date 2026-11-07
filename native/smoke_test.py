@@ -10,15 +10,30 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
-from test_runtime import SYNTHETIC_RUNTIME, SAMPLE_MEMBER
+from test_runtime import SYNTHETIC_RUNTIME
 from transport import inspector_endpoint
 
-EXE = ROOT / "dist/native/DSH人格切换器-C++.exe"
-DSH = Path(os.environ["LOCALAPPDATA"]) / "Programs/DSH Desktop/DSH Desktop.exe"
+EXE = Path(os.environ.get("DSH_PERSONA_TEST_EXE", ROOT / "dist/native/DSH人格切换器-C++.exe"))
+SAMPLE_MEMBER = "dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js"
 FIXTURE = ROOT / "tests/runtime_fixture.mjs"
 
 
 class NativeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        supplied = os.environ.get("DSH_PERSONA_TEST_RUNTIME")
+        if supplied:
+            cls.dsh = Path(supplied).resolve(strict=True)
+            return
+        with tempfile.TemporaryDirectory(prefix="dsh-native-hosts-") as temp:
+            report = Path(temp) / "hosts.json"
+            subprocess.run([str(EXE), "--list-hosts", str(report)], check=True,
+                           timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+            hosts = json.loads(report.read_text(encoding="utf-8"))["hosts"]
+        if len(hosts) != 1:
+            raise unittest.SkipTest("Requires exactly one running DSH host")
+        cls.dsh = Path(hosts[0]["executable"])
+
     def invoke(self, arguments, report):
         env = {**os.environ, "PATH": str(Path(os.environ["SystemRoot"]) / "System32")}
         result = subprocess.run([str(EXE), *map(str, arguments), str(report)], env=env,
@@ -31,14 +46,14 @@ class NativeTests(unittest.TestCase):
     def fixture(self, source, root, report):
         env = {**os.environ, "ELECTRON_RUN_AS_NODE": "1"}
         env.pop("NODE_OPTIONS", None)
-        child = subprocess.Popen([str(DSH), str(FIXTURE), source.as_uri()], env=env,
+        child = subprocess.Popen([str(self.dsh), str(FIXTURE), source.as_uri()], env=env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  text=True, encoding="utf-8", creationflags=subprocess.CREATE_NO_WINDOW)
         try:
             ready = child.stdout.readline()
             self.assertTrue(ready, "Fixture exited before ready")
             self.assertEqual(json.loads(ready)["pid"], child.pid)
-            data = self.invoke(["--fixture-test", child.pid, DSH, FIXTURE, root], report)
+            data = self.invoke(["--fixture-test", child.pid, self.dsh, FIXTURE, root], report)
             self.assertTrue(data["checks"]["passed"])
             self.assertGreaterEqual(data["checks"]["checks"], 30)
             self.assertTrue(data["cacheHit"])
@@ -50,7 +65,7 @@ class NativeTests(unittest.TestCase):
 
     def test_shipped_runtime(self):
         with tempfile.TemporaryDirectory(prefix="dsh-native-shipped-") as temp:
-            install = DSH.parent
+            install = self.dsh.parent
             self.fixture(install / "resources/app.asar" / SAMPLE_MEMBER, install, Path(temp) / "report.json")
 
     def test_layout_and_signature_changes(self):

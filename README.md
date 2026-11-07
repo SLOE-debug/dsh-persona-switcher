@@ -8,7 +8,11 @@
 
 双击 `dist/native/DSH人格切换器-C++.exe`，适用于 Windows x64。原生 Win32 窗口、进程查询和 Inspector 通信由 C++ 实现，静态链接 C++ 运行库，不需要安装 Python、Node 或 VC++ 运行库。
 
-当前 EXE 为 **839 KiB（0.82 MiB）**，此前 Python 单文件版为 **44.18 MiB**，体积减少约 **98%**。发布包为 `dist/DSH人格切换器-C++-Windows-x64.zip`，包含 EXE、使用说明和第三方许可。
+C++ 版从运行中进程的产品信息及 `@deepseek-ai/dsh-desktop-host` 启动入口识别宿主，不限定安装目录或 EXE 文件名。扫描范围从实际程序路径和宿主传入的目录参数确定；多个独立宿主同时运行时会提示选择保留一个实例。
+
+需要指定某个安装实例时，在启动切换器之前设置 `DSH_PERSONA_INSTALL_ROOT` 为安装目录的绝对路径（其中应有 `resources/app.asar`）。此时只识别该目录内的宿主启动入口，也可用于缺少公司版本信息的构建；配置错误会提示修正，删除变量后恢复自动发现。程序不会优先使用残留旧目录，也不会把唯一的 Electron 应用当作 DSH。
+
+当前 EXE 约为 **855 KiB（0.83 MiB）**，此前 Python 单文件版为 **44.18 MiB**，体积减少约 **98%**。发布包为 `dist/DSH人格切换器-C++-Windows-x64.zip`，包含 EXE、使用说明和第三方许可。
 
 EXE 内保留少量 JavaScript：Acorn 结构解析器、入口扫描器和人格补丁。它们在 DSH 自己的 Node 运行时中执行，不携带独立 Node。扫描器把已加载模块的源码作为数据解析，不执行扫描到的源码。
 
@@ -26,6 +30,8 @@ powershell -ExecutionPolicy Bypass -File native/build.ps1
 ```
 
 构建输出位于 `dist/native/`，中间文件位于 `build/native/`。没有安装 Python 也能构建和使用 C++ EXE。构建脚本将当前 `personas/*.md` 内嵌为首次运行的默认人格；不会覆盖用户已经存在的人格文件夹。
+
+原 EXE 正在运行时，可向构建脚本传入 `-OutputDirectory <输出目录>`，避免覆盖占用中的文件。集成检查可通过 `DSH_PERSONA_TEST_EXE` 指定待测 EXE，通过 `DSH_PERSONA_TEST_RUNTIME` 指定用于独立测试的 DSH 可执行文件；未指定运行时时，从运行中的宿主获取路径。
 
 ## 原 Python 版源码启动
 
@@ -119,12 +125,15 @@ python main.py
 ```powershell
 npm test
 python -m unittest discover -s tests -v
+powershell -ExecutionPolicy Bypass -File native/test_processes.ps1
 python native/smoke_test.py
 ```
 
 C++ 集成检查使用已经构建的 EXE，移除 PATH 中的 Python、Node 路径，覆盖真实安装包模块、中文路径、变化后的源码签名、缓存复核、人格切换、请求筛选、恢复标准及临时 Inspector 关闭。测试启动的是受控独立进程。
 
 也可以运行 `DSH人格切换器-C++.exe --self-test <报告绝对路径>`，验证资源并识别当前 DSH 的入口；此模式不会应用人格或发送模型消息。窗口使用后台线程处理连接和扫描，主线程更新控件；不执行浏览器端测试或网页操作。
+
+`DSH人格切换器-C++.exe --list-hosts <报告绝对路径>` 仅输出识别到的宿主 PID、程序路径、启动入口和扫描目录，不连接 Inspector。原生集成检查通过此结果选择测试运行时，不依赖固定安装路径。
 
 调试入口可参考 [Node 按 PID 调试实现](https://github.com/nodejs/node/blob/main/lib/internal/debugger/inspect.js)。
 
@@ -145,6 +154,7 @@ python build_exe.py
 | `native/main.cpp` / `native/gui.cpp` | C++ 启动编排、原生 Win32 窗口和后台操作 |
 | `native/controller.cpp` / `native/assets.cpp` | 操作流程、状态和资源缓存、人格文件读取 |
 | `native/processes.cpp` / `native/cdp.cpp` | Windows 进程查询、本机端口和 WinHTTP Inspector 通信 |
+| `native/host_discovery.cpp` / `native/test_processes.ps1` | 动态宿主识别和进程筛选回归检查 |
 | `native/discovery.cpp` / `native/common.cpp` | 运行时扫描编排、缓存复核、编码和摘要 |
 | `native/build.ps1` / `native/smoke_test.py` | 原生 EXE 构建和受控集成检查 |
 | `main.py` / `启动人格切换器.pyw` | 启动编排 |

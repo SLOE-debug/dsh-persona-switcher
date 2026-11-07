@@ -1,8 +1,8 @@
-﻿param([switch]$SkipArchive)
+﻿param([switch]$SkipArchive, [string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $build = Join-Path $project 'build\native'
-$release = Join-Path $project 'dist\native'
+$release = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $project 'dist\native' }
 New-Item -ItemType Directory -Force -Path $build, $release | Out-Null
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 function Write-Utf8([string]$Path, [string]$Text) { [IO.File]::WriteAllText($Path, $Text, $utf8) }
@@ -52,7 +52,7 @@ if errorlevel 1 exit /b 1
 cd /d "$build"
 rc /nologo /c65001 /fo assets.res assets.rc
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++20 /utf-8 /MT /O1 /GL /Gy /Gw /EHsc /W3 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_WIN32_WINNT=0x0A00 $($sources -join ' ') assets.res /Fe:"$exe" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS user32.lib gdi32.lib comctl32.lib shell32.lib ole32.lib oleaut32.lib wbemuuid.lib iphlpapi.lib ws2_32.lib winhttp.lib bcrypt.lib
+cl /nologo /std:c++20 /utf-8 /MT /O1 /GL /Gy /Gw /EHsc /W3 /DUNICODE /D_UNICODE /DNOMINMAX /DWIN32_LEAN_AND_MEAN /D_WIN32_WINNT=0x0A00 $($sources -join ' ') assets.res /Fe:"$exe" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS user32.lib gdi32.lib comctl32.lib shell32.lib ole32.lib oleaut32.lib wbemuuid.lib iphlpapi.lib ws2_32.lib winhttp.lib bcrypt.lib version.lib
 exit /b %errorlevel%
 "@
 # Use UTF-8 and CRLF so cmd.exe reads Chinese paths correctly.
