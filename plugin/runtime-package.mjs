@@ -45,4 +45,3 @@ export async function promoteRuntime(prepared, runtime) {
   catch (error) { if (previous) await rename(backup, runtime); throw error; }
   return previous ? backup : null;
 }
-
