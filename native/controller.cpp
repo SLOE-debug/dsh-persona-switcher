@@ -25,7 +25,7 @@ Json Controller::present(Json state) {
 Json Controller::status() {
     Host current;
     try { current = host(); }
-    catch (const std::exception& error) { return {{"connected", false}, {"phase", "connected"}, {"message", error.what()}}; }
+    catch (const std::exception& error) { return {{"connected", false}, {"phase", "disconnected"}, {"message", error.what()}}; }
     if (!inspect_) return {{"connected", true}, {"phase", "connected"}, {"message", "DSH 已运行，可选择人格并切换。"}};
     TargetSession session(current);
     auto state = control(*session.client, assets_, "status");
@@ -71,8 +71,9 @@ Json Controller::selfTest() {
     auto personas = assets_.loadPersonas();
     if (personas.empty()) throw std::runtime_error("未找到人格文件。");
     Json result = {{"ok", true}, {"implementation", "native-cpp-win32"}, {"personaCount", personas.size()},
-        {"bundledPython", false}, {"bundledNode", false}, {"status", status()}};
-    if (result["status"].value("connected", false)) {
+        {"status", status()}};
+    result["ok"] = result["status"].value("connected", false);
+    if (result["ok"].get<bool>()) {
         result["discovery"] = discover();
         if (result["discovery"].value("phase", "") == "unsupported") result["ok"] = false;
     }

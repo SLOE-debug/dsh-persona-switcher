@@ -42,7 +42,7 @@ class Window {
     }
     void reload() {
         auto previous = SendMessageW(combo_, CB_GETCURSEL, 0, 0);
-        std::wstring name = previous >= 0 && static_cast<size_t>(previous) < personas_.size() ? personas_[previous].name : L"可爱";
+        std::wstring name = previous >= 0 && static_cast<size_t>(previous) < personas_.size() ? personas_[previous].name : L"无法拒绝";
         auto loaded = controller_.assets().loadPersonas();
         personas_ = std::move(loaded); SendMessageW(combo_, CB_RESETCONTENT, 0, 0);
         int selected = 0;

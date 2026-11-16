@@ -52,7 +52,7 @@ static std::vector<ProcessInfo> processTable() {
 }
 std::vector<Host> discoverHosts() {
     auto configured = installOverride();
-    return selectHosts(processTable(), isDeepSeekProduct, configured);
+    return selectHosts(processTable(), isDshApplication, configured);
 }
 std::vector<unsigned short> listeningPorts(DWORD pid) {
     ULONG size = 0;

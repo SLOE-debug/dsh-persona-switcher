@@ -1,0 +1,43 @@
+@layer persona-theme, persona-utilities;
+@import "tailwindcss/theme.css" layer(persona-theme) prefix(tw);
+@import "tailwindcss/utilities.css" layer(persona-utilities) prefix(tw) source(none) important;
+@source "./*.js";
+
+.dsh-persona {
+  --persona-border: var(--dsw-alias-border-l2, #e5e7eb);
+  --persona-panel: var(--dsw-alias-bg-layer-1, #ffffff);
+  --persona-hover: var(--dsw-alias-interactive-bg-hover, #f5f5f7);
+  --persona-muted: var(--dsw-alias-label-secondary, #71717a);
+  --persona-ink: var(--dsw-alias-label-primary, #27272a);
+  --persona-track: var(--dsw-alias-border-l3, #c7c7cf);
+  color: var(--dsw-alias-label-primary, #27272a);
+  font: inherit;
+  container-type: inline-size;
+}
+.dsh-persona, .dsh-persona * { box-sizing: border-box; border-style: solid; border-width: 0; }
+.dsh-persona button, .dsh-persona input, .dsh-persona textarea, .dsh-persona select { font-family: inherit; }
+.dsh-persona button { cursor: pointer; }
+.dsh-persona button:disabled, .dsh-persona select:disabled { cursor: not-allowed; }
+.dsh-persona button:not([class*="tw:border"]){border:0;background:transparent;padding:0;}
+.dsh-persona select, .dsh-persona textarea, .dsh-persona input { color: inherit; }
+.dsh-persona textarea { font-family: var(--ds-font-family-code, ui-monospace, Consolas, monospace); }
+.dsh-persona-composer {
+  width: calc(100% - var(--dsh-composer-side-clearance) * 2);
+  max-width: var(--dsh-composer-card-max-width);
+  margin: 0 auto;
+  padding: 0 4px 4px;
+}
+.persona-picker-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--persona-border);
+  border-radius: 14px;
+  background: var(--persona-panel);
+  color: var(--persona-ink);
+  box-shadow: 0 8px 28px #00000016, 0 2px 6px #00000008;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}

@@ -63,11 +63,12 @@ Write-Utf8 (Join-Path $release '第三方许可.txt') $licenses
 $usage = @'
 DSH 人格切换器 · 原生 C++ 版（Windows x64）
 双击 EXE，打开 DSH 后选择人格，点击“切换人格”。
+默认只包含“无法拒绝”人格。
 首次运行会在 EXE 旁生成 personas 文件夹；编辑 UTF-8 .md 文件后点击“刷新列表”。
 切换只对当前 DSH 进程生效，DSH 重启后需要重新切换。
 “恢复标准”会撤销人格；关闭切换器会保留已经应用的人格。
 支持标准预设，跳过其他预设和辅助请求。请求命中不代表模型已成功响应。
-不需要安装 Python 或 Node。少量 JavaScript 在 DSH 自己的运行时中执行。
+原生 Win32 程序，少量 JavaScript 在 DSH 自己的运行时中执行。
 运行缓存位于 %LOCALAPPDATA%\DSH-Persona-Switcher\native-cache。
 更新后如果无法唯一核验入口，会停止注入；不能保证任意未来内部改动都能自动适配。
 '@

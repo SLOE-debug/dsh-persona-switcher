@@ -5,34 +5,11 @@
 #include <set>
 
 namespace dsh {
-bool isDeepSeekProduct(const fs::path& executable) {
-    DWORD unused{};
-    auto size = GetFileVersionInfoSizeW(executable.c_str(), &unused);
-    if (!size) return false;
-    std::vector<unsigned char> data(size);
-    if (!GetFileVersionInfoW(executable.c_str(), 0, size, data.data())) return false;
-    struct Translation { WORD language, codepage; };
-    Translation* translations{}; UINT bytes{};
-    if (!VerQueryValueW(data.data(), L"\\VarFileInfo\\Translation", reinterpret_cast<void**>(&translations), &bytes)) return false;
-    for (UINT i = 0; i < bytes / sizeof(Translation); ++i) {
-        wchar_t key[80]{};
-        swprintf_s(key, L"\\StringFileInfo\\%04x%04x\\CompanyName", translations[i].language, translations[i].codepage);
-        wchar_t* value{}; UINT length{};
-        if (!VerQueryValueW(data.data(), key, reinterpret_cast<void**>(&value), &length) || !length) continue;
-        std::wstring company(value);
-        std::transform(company.begin(), company.end(), company.begin(), towlower);
-        if (company.find(L"deepseek") != std::wstring::npos) return true;
-    }
-    return false;
-}
-
 static bool isHostEntry(const fs::path& entry) {
     if (!entry.is_absolute()) return false;
-    auto path = normalizedPath(entry);
     auto ext = entry.extension().wstring();
     std::transform(ext.begin(), ext.end(), ext.begin(), towlower);
-    return (ext == L".js" || ext == L".mjs" || ext == L".cjs") &&
-        path.find(L"\\node_modules\\@deepseek-ai\\dsh-desktop-host\\") != std::wstring::npos;
+    return ext == L".js" || ext == L".mjs" || ext == L".cjs";
 }
 
 static size_t scriptIndex(const std::vector<std::wstring>& args) {
@@ -73,7 +50,9 @@ std::vector<Host> selectHosts(const std::vector<ProcessInfo>& table, const Produ
             if (!products[key]) continue;
         }
         auto install = row.exe.parent_path();
-        if (!within(install, fs::path(args[entryIndex]))) continue;
+        // The actual positional script must belong to this app's package.
+        // Internal entry names and vendor company names are not host contracts.
+        if (!within(install / L"resources/app.asar", fs::path(args[entryIndex]))) continue;
         Host host{row.pid, row.created, row.exe, {fs::path(args[entryIndex])}, {install}};
         // The host supplies its app, profile and runtime directories on its own command line.
         for (size_t i = entryIndex + 1; i < args.size(); ++i) {

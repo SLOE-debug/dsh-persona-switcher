@@ -1,15 +1,5 @@
-# Python caches and local environments
-__pycache__/
+# Dependencies
 node_modules/
-.discovery-cache/
-*.py[cod]
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
 
 # Local secrets, logs and packaged outputs
 .env
@@ -18,7 +8,6 @@ htmlcov/
 *.zip
 build/
 dist/
-*.egg-info/
 
 # Native binaries and intermediate files
 *.exe

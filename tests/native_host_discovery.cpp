@@ -6,10 +6,10 @@
 using namespace dsh;
 static ProcessInfo host(DWORD pid, const fs::path& install, DWORD parent = 0) {
     auto executable = install / L"任意名称.exe";
-    auto entry = install / L"resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/main.js";
+    auto entry = install / L"resources/app.asar/out/main/host.js";
     return {pid, parent, executable, L"\"" + executable.wstring() + L"\" --expose-internals \"" + entry.wstring() + L"\"", L"start"};
 }
-int main() {
+void testHostDiscovery() {
     auto product = [](const fs::path&) { return true; };
     auto moved = host(10, L"D:/自定义 目录/应用");
     auto selected = selectHosts({moved}, product);
@@ -17,6 +17,16 @@ int main() {
     assert(selected[0].entries.size() == 1);
     assert(normalizedPath(selected[0].roots[0]) == normalizedPath(moved.exe.parent_path()));
     assert(selectHosts({moved}, [](const fs::path&) { return false; }).empty());
+    auto relocated = moved;
+    auto newEntry = moved.exe.parent_path() / L"resources/app.asar/new-layout/bootstrap.cjs";
+    relocated.command = L"app.exe --expose-internals \"" + newEntry.wstring() + L"\"";
+    assert(selectHosts({relocated}, product).size() == 1);
+    auto externalScript = moved;
+    externalScript.command = L"app.exe \"" + (moved.exe.parent_path() / L"tools/helper.js").wstring() + L"\"";
+    assert(selectHosts({externalScript}, product).empty());
+    auto escapedEntry = moved;
+    escapedEntry.command = L"app.exe \"" + (moved.exe.parent_path() / L"resources/app.asar/../outside.js").wstring() + L"\"";
+    assert(selectHosts({escapedEntry}, product).empty());
 
     auto renderer = moved; renderer.pid = 11; renderer.command += L" --type=renderer";
     auto unrelated = moved; unrelated.pid = 12;
@@ -70,6 +80,6 @@ int main() {
     moved.parent = 100;
     ProcessInfo cycle{100, 101}, cycleBack{101, 100};
     assert(selectHosts({moved, cycle, cycleBack}, product).size() == 1);
-    assert(!isDeepSeekProduct(L"Z:/missing/application.exe"));
+    assert(!isDshApplication(L"Z:/missing/application.exe"));
     std::cout << "Host discovery checks passed\n";
 }

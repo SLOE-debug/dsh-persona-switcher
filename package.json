@@ -1,9 +1,54 @@
 {
   "name": "dsh-persona-switcher",
-  "version": "2.0.0",
+  "version": "3.2.0",
+  "description": "DSH 对话人格开关：仅当前对话生效，支持 GitHub 热更新。",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.15.0" },
-  "scripts": { "test": "node --test tests/test_*.mjs" },
-  "dependencies": { "acorn": "8.17.0" }
+  "main": "./plugin/index.mjs",
+  "exports": {
+    ".": "./plugin/index.mjs",
+    "./client": "./plugin/client.js",
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SLOE-debug/dsh-persona-switcher.git"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "persona"
+  ],
+  "dsh": {
+    "personaProtocol": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "files": [
+    "plugin",
+    "personas/无法拒绝.md",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "test": "node --test tests/test_*.mjs",
+    "build:client": "node scripts/build-client.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.5",
+    "acorn": "8.17.0",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.5"
+  }
 }

@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict';
 import {control} from '../runtime_patch.mjs';
 const moduleUrl = process.argv[2];
-const {LlmRuntime} = await import(moduleUrl);
-const original = LlmRuntime.prototype.forAdapter;
+const {[process.argv[3] ?? 'LlmRuntime']: LlmRuntime} = await import(moduleUrl);
+const method = process.argv[4] ?? 'forAdapter';
+const original = LlmRuntime.prototype[method];
 let preset = 'standard';
 const projections = {stateOf: () => preset};
 const agent = {session: {header: {}}, ctx: {sessionProjections: projections}};
@@ -33,11 +34,11 @@ globalThis.runPersonaFixture = async candidate => {
   };
   assert.equal((await control({action: 'status'})).active, false);
   await assert.rejects(control({action: 'apply', name: '空', text: ' ', candidate}));
-  check('invalid persona installs no hook', () => assert.equal(LlmRuntime.prototype.forAdapter, original));
+  check('invalid persona installs no hook', () => assert.equal(LlmRuntime.prototype[method], original));
   const armed = await control({action: 'apply', name: '可爱', text: '可爱表情 (｡･ω･｡)', candidate});
   check('armed until a qualifying request is seen', () => assert.equal(armed.phase, 'armed'));
   check('runtime discovery candidate is recorded', () => assert.equal(armed.candidate.methodName, candidate.methodName));
-  const call = options => runtime.forAdapter(options, {});
+  const call = options => runtime[method](options, {});
   const result = call(base);
   check('initial system receives persona', () => assert.match(result.messages[0].content.at(-1).text, /可爱表情/));
   check('historical system snapshot receives persona', () => assert.match(result.messages[2].content.at(-1).text, /可爱表情/));
@@ -77,7 +78,7 @@ globalThis.runPersonaFixture = async candidate => {
   check('skipped calls are counted separately', () => assert.equal(stats.skippedRequests, 6));
   check('skip reason is available', () => assert.match(stats.lastSkipReason, /系统指令结构/));
   const reset = await control({action: 'reset'});
-  check('original method is restored exactly', () => assert.equal(LlmRuntime.prototype.forAdapter, original));
+  check('original method is restored exactly', () => assert.equal(LlmRuntime.prototype[method], original));
   check('reset returns to standard', () => assert.equal(reset.phase, 'standard'));
   check('reset removes active persona', () => assert.equal((reset.active), false));
   check('original request survives all switching', () => assert.equal(JSON.stringify(base), baseline));
